@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { FileDropZone } from '../FileDropZone'
-import { Button, Card, Alert } from '../../ui'
+import { Button, Card, Alert, Input, Spinner } from '../../ui'
 import { useArchiveParser } from '../../../hooks/useArchiveParser'
+import { useXApi } from '../../../hooks/useXApi'
 import { useImportStore } from '../../../store/import-store'
 
 interface ImportXDataStepProps {
@@ -13,14 +14,48 @@ type ImportMethod = 'archive' | 'api'
 
 export function ImportXDataStep({ onNext, onBack }: ImportXDataStepProps) {
   const [method, setMethod] = useState<ImportMethod>('archive')
-  const { parseFile, isLoading, error, clearError } = useArchiveParser()
-  const { xUsers } = useImportStore()
+  const [bearerToken, setBearerToken] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [customWorkerUrl, setCustomWorkerUrl] = useState('')
+
+  const {
+    parseFile,
+    isLoading: isParsingArchive,
+    error: archiveError,
+    clearError: clearArchiveError,
+  } = useArchiveParser()
+
+  const {
+    isConfigured,
+    username,
+    validateToken,
+    isValidating,
+    fetchFollowing,
+    isFetching,
+    error: apiError,
+    clearError: clearApiError,
+    clearConfig,
+  } = useXApi()
+
+  const { xUsers, progress } = useImportStore()
 
   const handleFileSelect = async (file: File) => {
     parseFile(file)
   }
 
+  const handleConnectApi = () => {
+    if (bearerToken.trim()) {
+      validateToken(bearerToken.trim())
+    }
+  }
+
+  const handleFetchFollowing = () => {
+    fetchFollowing()
+  }
+
   const hasUsers = xUsers.length > 0
+  const error = method === 'archive' ? archiveError : apiError
+  const clearError = method === 'archive' ? clearArchiveError : clearApiError
 
   return (
     <div className="py-6">
@@ -89,19 +124,13 @@ export function ImportXDataStep({ onNext, onBack }: ImportXDataStepProps) {
                     Ready to find them on Bluesky
                   </p>
                 </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    // Allow re-upload
-                  }}
-                >
-                  Change
-                </Button>
               </div>
             </Card>
           ) : (
-            <FileDropZone onFileSelect={handleFileSelect} isLoading={isLoading} />
+            <FileDropZone
+              onFileSelect={handleFileSelect}
+              isLoading={isParsingArchive}
+            />
           )}
 
           {/* Instructions */}
@@ -121,10 +150,15 @@ export function ImportXDataStep({ onNext, onBack }: ImportXDataStepProps) {
                   X Settings → Download your data
                 </a>
               </li>
-              <li>Request your archive and wait for the email (24-48 hours)</li>
+              <li>
+                Request your archive and wait for the email (24-48 hours)
+              </li>
               <li>Download and extract the ZIP file</li>
               <li>
-                Find <code className="bg-gray-100 px-1 rounded">data/following.js</code>{' '}
+                Find{' '}
+                <code className="bg-gray-100 px-1 rounded">
+                  data/following.js
+                </code>{' '}
                 and upload it here
               </li>
             </ol>
@@ -157,18 +191,152 @@ export function ImportXDataStep({ onNext, onBack }: ImportXDataStepProps) {
             </div>
           </Card>
 
-          <Card>
-            <h3 className="font-semibold text-gray-900 mb-4">
-              Use your own X API credentials
-            </h3>
-            <p className="text-sm text-gray-600 mb-4">
-              If you have X API access, you can enter your credentials here. Your
-              keys are stored locally and never sent to our servers.
-            </p>
-            <p className="text-sm text-gray-500">
-              This feature is coming soon. Please use the archive method for now.
-            </p>
-          </Card>
+          {isConfigured ? (
+            // Connected state
+            <Card>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                  <svg
+                    className="w-6 h-6 text-green-600"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900">
+                    Connected to X API
+                  </p>
+                  <p className="text-sm text-gray-500">@{username}</p>
+                </div>
+                <Button variant="secondary" size="sm" onClick={clearConfig}>
+                  Disconnect
+                </Button>
+              </div>
+
+              {hasUsers ? (
+                <div className="p-4 bg-green-50 rounded-lg">
+                  <p className="font-medium text-green-900">
+                    {xUsers.length} accounts loaded
+                  </p>
+                  <p className="text-sm text-green-700">
+                    Ready to find them on Bluesky
+                  </p>
+                </div>
+              ) : isFetching ? (
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <Spinner size="sm" />
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        {progress.message || 'Fetching...'}
+                      </p>
+                      {progress.currentStep > 0 && (
+                        <p className="text-sm text-gray-500">
+                          {progress.currentStep} accounts fetched
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  variant="primary"
+                  className="w-full"
+                  onClick={handleFetchFollowing}
+                >
+                  Fetch Following List
+                </Button>
+              )}
+            </Card>
+          ) : (
+            // Connect form
+            <Card>
+              <h3 className="font-semibold text-gray-900 mb-4">
+                Connect with your X API Bearer Token
+              </h3>
+
+              <div className="space-y-4">
+                <Input
+                  label="Bearer Token"
+                  type="password"
+                  placeholder="Enter your X API Bearer Token"
+                  value={bearerToken}
+                  onChange={(e) => setBearerToken(e.target.value)}
+                  disabled={isValidating}
+                />
+
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                >
+                  <svg
+                    className={`w-4 h-4 transition-transform ${
+                      showAdvanced ? 'rotate-90' : ''
+                    }`}
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  Advanced options
+                </button>
+
+                {showAdvanced && (
+                  <Input
+                    label="Custom Worker URL (optional)"
+                    type="url"
+                    placeholder="https://your-worker.workers.dev"
+                    value={customWorkerUrl}
+                    onChange={(e) => setCustomWorkerUrl(e.target.value)}
+                    helperText="Use your own Cloudflare Worker deployment"
+                  />
+                )}
+
+                <Button
+                  variant="primary"
+                  className="w-full"
+                  onClick={handleConnectApi}
+                  isLoading={isValidating}
+                  disabled={!bearerToken.trim()}
+                >
+                  Connect to X API
+                </Button>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-gray-200">
+                <h4 className="text-sm font-medium text-gray-900 mb-2">
+                  How to get your Bearer Token
+                </h4>
+                <ol className="space-y-1 text-sm text-gray-600 list-decimal list-inside">
+                  <li>
+                    Go to the{' '}
+                    <a
+                      href="https://developer.twitter.com/en/portal/dashboard"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-bsky-500 hover:text-bsky-600 underline"
+                    >
+                      X Developer Portal
+                    </a>
+                  </li>
+                  <li>Create a project and app (requires paid plan)</li>
+                  <li>Generate a Bearer Token with read access</li>
+                  <li>Copy and paste it above</li>
+                </ol>
+              </div>
+            </Card>
+          )}
         </div>
       )}
 
@@ -177,11 +345,7 @@ export function ImportXDataStep({ onNext, onBack }: ImportXDataStepProps) {
         <Button variant="secondary" onClick={onBack}>
           Back
         </Button>
-        <Button
-          variant="primary"
-          onClick={onNext}
-          disabled={!hasUsers}
-        >
+        <Button variant="primary" onClick={onNext} disabled={!hasUsers}>
           Continue
         </Button>
       </div>

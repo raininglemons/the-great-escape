@@ -40,7 +40,7 @@ export interface MatchResult {
 
 // Import progress
 export interface ImportProgress {
-  phase: 'idle' | 'parsing' | 'matching' | 'following' | 'complete' | 'error'
+  phase: 'idle' | 'parsing' | 'fetching' | 'matching' | 'following' | 'complete' | 'error'
   currentStep: number
   totalSteps: number
   message: string
