@@ -3,14 +3,18 @@
   "version": "1.0.0",
   "private": true,
   "description": "Import your X (Twitter) follows to Bluesky",
+  "workspaces": [
+    "packages/*",
+    "shared"
+  ],
   "scripts": {
-    "dev": "pnpm --filter web dev",
-    "build": "pnpm --filter web build",
-    "preview": "pnpm --filter web preview",
-    "dev:worker": "pnpm --filter worker dev",
-    "deploy:worker": "pnpm --filter worker deploy",
-    "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck"
+    "dev": "yarn workspace web dev",
+    "build": "yarn workspace web build",
+    "preview": "yarn workspace web preview",
+    "dev:worker": "yarn workspace worker dev",
+    "deploy:worker": "yarn workspace worker deploy",
+    "lint": "yarn workspaces run lint",
+    "typecheck": "yarn workspaces run typecheck"
   },
   "keywords": [
     "bluesky",
