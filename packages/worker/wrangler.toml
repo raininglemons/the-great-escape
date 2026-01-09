@@ -1,0 +1,14 @@
+name = "the-great-escape-api"
+main = "src/index.ts"
+compatibility_date = "2024-06-01"
+
+# Uncomment to use KV for token storage
+# [[kv_namespaces]]
+# binding = "TOKENS"
+# id = "your-kv-namespace-id"
+
+[vars]
+ENVIRONMENT = "development"
+
+# CORS allowed origins (update for production)
+# ALLOWED_ORIGINS = "https://your-domain.com"
