@@ -99,6 +99,46 @@ export class XApiClient {
     return allUsers
   }
 
+  /**
+   * Batch lookup users by ID (max 100 per request)
+   */
+  async lookupUsers(ids: string[]): Promise<XUser[]> {
+    if (ids.length === 0) return []
+
+    const response = await this.post('/api/x/users/lookup', { ids })
+    const users = ((response.data as XApiUser[]) || []).map((u) =>
+      this.transformUser(u)
+    )
+
+    return users
+  }
+
+  /**
+   * Resolve all user IDs to profiles (handles batching and rate limits)
+   */
+  async resolveUserIds(
+    ids: string[],
+    onProgress?: (resolved: number, total: number) => void
+  ): Promise<XUser[]> {
+    const BATCH_SIZE = 100
+    const allUsers: XUser[] = []
+
+    for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+      const batch = ids.slice(i, i + BATCH_SIZE)
+      const users = await this.lookupUsers(batch)
+      allUsers.push(...users)
+
+      onProgress?.(allUsers.length, ids.length)
+
+      // Rate limit protection between batches
+      if (i + BATCH_SIZE < ids.length) {
+        await this.sleep(1000)
+      }
+    }
+
+    return allUsers
+  }
+
   private async fetch(path: string): Promise<XApiResponse<unknown>> {
     const url = `${this.workerUrl}${path}`
 
@@ -109,6 +149,30 @@ export class XApiClient {
       },
     })
 
+    return this.handleResponse(response)
+  }
+
+  private async post(
+    path: string,
+    body: unknown
+  ): Promise<XApiResponse<unknown>> {
+    const url = `${this.workerUrl}${path}`
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.bearerToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    })
+
+    return this.handleResponse(response)
+  }
+
+  private async handleResponse(
+    response: Response
+  ): Promise<XApiResponse<unknown>> {
     if (!response.ok) {
       const error = await response.json().catch(() => ({}))
       const message =

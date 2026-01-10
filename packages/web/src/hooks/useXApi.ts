@@ -33,7 +33,7 @@ function saveConfig(config: XApiConfig | null) {
 export function useXApi() {
   const [config, setConfigState] = useState<XApiConfig | null>(loadConfig)
   const [error, setError] = useState<string | null>(null)
-  const { setXUsers, setProgress } = useImportStore()
+  const { xUsers, setXUsers, setProgress } = useImportStore()
 
   const setConfig = useCallback((newConfig: XApiConfig | null) => {
     setConfigState(newConfig)
@@ -70,7 +70,7 @@ export function useXApi() {
     },
   })
 
-  // Fetch following mutation
+  // Fetch following mutation (for direct API method)
   const fetchFollowingMutation = useMutation({
     mutationFn: async (): Promise<XUser[]> => {
       if (!config?.bearerToken || !config?.userId) {
@@ -116,21 +116,89 @@ export function useXApi() {
     },
   })
 
+  // Resolve user IDs mutation (for archive method)
+  const resolveUserIdsMutation = useMutation({
+    mutationFn: async (userIds: string[]): Promise<XUser[]> => {
+      if (!config?.bearerToken) {
+        throw new Error('Not connected to X API')
+      }
+
+      setError(null)
+      setProgress({
+        phase: 'resolving',
+        currentStep: 0,
+        totalSteps: userIds.length,
+        message: 'Resolving user profiles...',
+      })
+
+      const client = new XApiClient({
+        bearerToken: config.bearerToken,
+        workerUrl: config.workerUrl,
+      })
+
+      const users = await client.resolveUserIds(
+        userIds,
+        (resolved, total) => {
+          setProgress({
+            phase: 'resolving',
+            currentStep: resolved,
+            totalSteps: total,
+            message: `Resolved ${resolved} of ${total} profiles...`,
+          })
+        }
+      )
+
+      return users
+    },
+    onSuccess: (users) => {
+      setXUsers(users)
+      setProgress({
+        phase: 'idle',
+        currentStep: users.length,
+        totalSteps: users.length,
+        message: `Resolved ${users.length} user profiles`,
+      })
+    },
+    onError: (err: Error) => {
+      setError(err.message)
+      setProgress({ phase: 'error', error: err.message })
+    },
+  })
+
+  // Check if current xUsers need resolution
+  const usersNeedResolution = xUsers.some(
+    (user) => user.needsResolution || user.handle.startsWith('id:')
+  )
+
+  // Get IDs that need resolution
+  const unresolvedUserIds = xUsers
+    .filter((user) => user.needsResolution || user.handle.startsWith('id:'))
+    .map((user) => user.accountId)
+
   return {
     // State
-    isConfigured: !!config?.bearerToken && !!config?.userId,
+    isConfigured: !!config?.bearerToken,
+    hasUserId: !!config?.userId,
     config,
     error,
     username: config?.username,
+
+    // Resolution state
+    usersNeedResolution,
+    unresolvedUserIds,
 
     // Validation
     validateToken: validateMutation.mutate,
     isValidating: validateMutation.isPending,
 
-    // Fetch following
+    // Fetch following (direct API)
     fetchFollowing: fetchFollowingMutation.mutate,
     isFetching: fetchFollowingMutation.isPending,
     followingData: fetchFollowingMutation.data,
+
+    // Resolve user IDs (archive method)
+    resolveUserIds: resolveUserIdsMutation.mutate,
+    isResolving: resolveUserIdsMutation.isPending,
 
     // Actions
     setWorkerUrl: (url: string) =>

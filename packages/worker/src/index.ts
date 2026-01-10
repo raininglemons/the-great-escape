@@ -83,6 +83,56 @@ app.get('/api/x/users/:userId/following', async (c) => {
   }
 })
 
+// Batch lookup users by IDs (up to 100 at a time)
+// POST body: { ids: ["123", "456", ...] }
+app.post('/api/x/users/lookup', async (c) => {
+  const accessToken = c.req.header('Authorization')?.replace('Bearer ', '')
+
+  if (!accessToken) {
+    return c.json({ error: 'Missing access token' }, 401)
+  }
+
+  try {
+    const body = await c.req.json<{ ids: string[] }>()
+    const ids = body.ids
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return c.json({ error: 'Missing or invalid ids array' }, 400)
+    }
+
+    if (ids.length > 100) {
+      return c.json({ error: 'Maximum 100 IDs per request' }, 400)
+    }
+
+    const url = new URL('https://api.twitter.com/2/users')
+    url.searchParams.set('ids', ids.join(','))
+    url.searchParams.set(
+      'user.fields',
+      'id,name,username,description,profile_image_url,public_metrics'
+    )
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
+
+    if (!response.ok) {
+      const error = await response.text()
+      return c.json(
+        { error: 'X API error', details: error },
+        response.status as 400 | 401 | 403 | 404 | 429 | 500
+      )
+    }
+
+    const data = await response.json()
+    return c.json(data)
+  } catch (error) {
+    console.error('X API proxy error:', error)
+    return c.json({ error: 'Failed to fetch from X API' }, 500)
+  }
+})
+
 // Get authenticated user info
 app.get('/api/x/users/me', async (c) => {
   const accessToken = c.req.header('Authorization')?.replace('Bearer ', '')

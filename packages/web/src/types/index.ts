@@ -7,6 +7,8 @@ export interface XUser {
   profileImageUrl?: string
   followersCount?: number
   followingCount?: number
+  // True if the user data is incomplete and needs API resolution
+  needsResolution?: boolean
 }
 
 // Bluesky User
@@ -40,7 +42,7 @@ export interface MatchResult {
 
 // Import progress
 export interface ImportProgress {
-  phase: 'idle' | 'parsing' | 'fetching' | 'matching' | 'following' | 'complete' | 'error'
+  phase: 'idle' | 'parsing' | 'fetching' | 'resolving' | 'matching' | 'following' | 'complete' | 'error'
   currentStep: number
   totalSteps: number
   message: string

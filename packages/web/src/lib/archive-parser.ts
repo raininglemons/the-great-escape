@@ -5,9 +5,12 @@ import type { XUser, ParsedArchive } from '../types'
  *
  * The archive file format is:
  * window.YTD.following.part0 = [
- *   { "following": { "accountId": "123", "userLink": "https://twitter.com/username" } },
+ *   { "following": { "accountId": "123", "userLink": "https://twitter.com/intent/user?user_id=123" } },
  *   ...
  * ]
+ *
+ * Note: Modern X archives only contain user IDs, not handles.
+ * The handles need to be resolved via the X API.
  */
 export async function parseArchiveFile(file: File): Promise<ParsedArchive> {
   const text = await file.text()
@@ -59,28 +62,59 @@ function parseArchiveEntry(entry: ArchiveEntry): XUser | null {
   if (!following) return null
 
   const { accountId, userLink } = following
-  if (!accountId || !userLink) return null
+  if (!accountId) return null
 
-  // Extract handle from userLink (https://twitter.com/username)
-  const handle = extractHandleFromUrl(userLink)
-  if (!handle) return null
+  // Try to extract handle from userLink if it's in the old format
+  // Old format: https://twitter.com/username
+  // New format: https://twitter.com/intent/user?user_id=123
+  const handle = userLink ? extractHandleFromUrl(userLink) : undefined
 
   return {
     accountId,
-    handle,
-    // Display name and bio aren't in the basic archive
-    // They would need to be fetched via API if available
+    // Handle might be undefined if using the new intent URL format
+    // In that case, we'll need to resolve it via the X API
+    handle: handle || `id:${accountId}`,
+    // Mark as needing resolution if we only have the ID
+    needsResolution: !handle,
   }
 }
 
 function extractHandleFromUrl(url: string): string | null {
   try {
-    // Handle both twitter.com and x.com URLs
-    const match = url.match(/(?:twitter\.com|x\.com)\/([a-zA-Z0-9_]+)/)
-    return match ? match[1] : null
+    // Check if it's the intent URL format (user_id based)
+    if (url.includes('intent/user?user_id=')) {
+      // Can't extract handle from this format
+      return null
+    }
+
+    // Handle old format: twitter.com/username or x.com/username
+    const match = url.match(/(?:twitter\.com|x\.com)\/([a-zA-Z0-9_]+)(?:\?|$|\/|#)/)
+    if (match && match[1] !== 'intent') {
+      return match[1]
+    }
+
+    return null
   } catch {
     return null
   }
+}
+
+/**
+ * Extract just the user IDs from the archive (for API resolution)
+ */
+export function extractUserIds(archive: ParsedArchive): string[] {
+  return archive.users.map((user) => user.accountId)
+}
+
+/**
+ * Check if the archive users need API resolution
+ * (i.e., they only have IDs, not handles)
+ */
+export function needsApiResolution(archive: ParsedArchive): boolean {
+  // If any user has the placeholder handle format, we need resolution
+  return archive.users.some(
+    (user) => user.handle.startsWith('id:') || user.needsResolution
+  )
 }
 
 /**
@@ -110,7 +144,10 @@ export function parseDetailedArchive(text: string): ParsedArchive {
 /**
  * Validate that a file is a valid X archive following file
  */
-export function validateArchiveFile(file: File): { valid: boolean; error?: string } {
+export function validateArchiveFile(file: File): {
+  valid: boolean
+  error?: string
+} {
   // Check file extension
   if (!file.name.endsWith('.js') && !file.name.endsWith('.json')) {
     return {
@@ -124,7 +161,8 @@ export function validateArchiveFile(file: File): { valid: boolean; error?: strin
   if (file.size > maxSize) {
     return {
       valid: false,
-      error: 'File is too large. Please upload the following.js file specifically.',
+      error:
+        'File is too large. Please upload the following.js file specifically.',
     }
   }
 
